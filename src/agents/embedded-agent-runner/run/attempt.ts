@@ -149,7 +149,11 @@ import { isTimeoutError } from "../../failover-error.js";
 import { runAgentEndSideEffects } from "../../harness/agent-end-side-effects.js";
 import { resolveHeartbeatPromptForSystemPrompt } from "../../heartbeat-system-prompt.js";
 import { resolveImageSanitizationLimits } from "../../image-sanitization.js";
-import { filterLocalModelLeanTools, isLocalModelLeanEnabled } from "../../local-model-lean.js";
+import {
+  applyLocalModelLeanToolSearchDefaults,
+  filterLocalModelLeanTools,
+  isLocalModelLeanEnabled,
+} from "../../local-model-lean.js";
 import { resolveModelAuthMode } from "../../model-auth.js";
 import { resolveDefaultModelForAgent } from "../../model-selection.js";
 import { supportsModelTools } from "../../model-tool-support.js";
@@ -1063,6 +1067,11 @@ export async function runEmbeddedAttempt(
     });
     const toolsEnabled = supportsModelTools(params.model);
     const codeModeConfig = resolveCodeModeConfig(params.config, sessionAgentId);
+    const toolSearchRuntimeConfig = applyLocalModelLeanToolSearchDefaults({
+      config: params.config,
+      agentId: sessionAgentId,
+      sessionKey: sandboxSessionKey,
+    });
     const codeModeControlsEnabledForRun =
       toolsEnabled &&
       params.disableTools !== true &&
@@ -1075,7 +1084,7 @@ export async function runEmbeddedAttempt(
       !isRawModelRun &&
       params.toolsAllow?.length !== 0 &&
       !codeModeControlsEnabledForRun &&
-      resolveToolSearchConfig(params.config).enabled;
+      resolveToolSearchConfig(toolSearchRuntimeConfig).enabled;
     const effectiveToolsAllow =
       toolSearchControlsEnabledForRun && toolsAllowWithForcedRuntimeTools
         ? [
@@ -1145,7 +1154,7 @@ export async function runEmbeddedAttempt(
                     sandbox,
                     resolvedWorkspace,
                   }),
-            config: params.config,
+            config: toolSearchRuntimeConfig,
             abortSignal: runAbortController.signal,
             modelProvider: params.provider,
             modelId: params.modelId,
@@ -1504,7 +1513,7 @@ export async function runEmbeddedAttempt(
         })
       : applyToolSearchCatalog({
           tools: effectiveTools,
-          config: params.config,
+          config: toolSearchRuntimeConfig,
           sessionId: params.sessionId,
           sessionKey: sandboxSessionKey,
           agentId: sessionAgentId,
@@ -2110,7 +2119,7 @@ export async function runEmbeddedAttempt(
           })
         : addClientToolsToToolSearchCatalog({
             tools: clientToolDefs,
-            config: params.config,
+            config: toolSearchRuntimeConfig,
             sessionId: params.sessionId,
             sessionKey: sandboxSessionKey,
             agentId: sessionAgentId,
