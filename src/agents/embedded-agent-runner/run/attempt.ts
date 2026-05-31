@@ -190,7 +190,10 @@ import {
   collectExplicitToolAllowlistSources,
 } from "../../tool-allowlist-guard.js";
 import { filterRuntimeCompatibleTools } from "../../tool-schema-projection.js";
-import { logRuntimeToolSchemaQuarantine } from "../../tool-schema-quarantine.js";
+import {
+  filterProviderNormalizableRuntimeTools,
+  logRuntimeToolSchemaQuarantine,
+} from "../../tool-schema-quarantine.js";
 import {
   addClientToolsToToolSearchCatalog,
   applyToolSearchCatalog,
@@ -1348,9 +1351,18 @@ export async function runEmbeddedAttempt(
       modelApi: params.model.api,
       model: params.model,
     };
+    const providerNormalizableToolsRaw =
+      toolsEnabled && toolsRaw.length > 0
+        ? filterProviderNormalizableRuntimeTools({
+            tools: toolsRaw,
+            runId: params.runId,
+            sessionKey: params.sessionKey,
+            sessionId: params.sessionId,
+          })
+        : [];
     const tools = normalizeAgentRuntimeTools({
       runtimePlan: params.runtimePlan,
-      tools: toolsEnabled ? toolsRaw : [],
+      tools: providerNormalizableToolsRaw,
       provider: params.provider,
       config: params.config,
       workspaceDir: effectiveWorkspace,
@@ -1383,6 +1395,7 @@ export async function runEmbeddedAttempt(
           ],
         })
       : undefined;
+    const bundleMcpTools = bundleMcpRuntime?.tools ?? [];
     const bundleLspEnabled = shouldCreateBundleLspRuntimeForAttempt({
       toolsEnabled,
       disableTools: params.disableTools || isRawModelRun,
@@ -1395,12 +1408,13 @@ export async function runEmbeddedAttempt(
           reservedToolNames: [
             ...tools.map((tool) => tool.name),
             ...(clientTools?.map((tool) => tool.function.name) ?? []),
-            ...(bundleMcpRuntime?.tools.map((tool) => tool.name) ?? []),
+            ...bundleMcpTools.map((tool) => tool.name),
           ],
         })
       : undefined;
+    const bundleLspTools = bundleLspRuntime?.tools ?? [];
     const allowedBundledTools = applyEmbeddedAttemptToolsAllow(
-      [...(bundleMcpRuntime?.tools ?? []), ...(bundleLspRuntime?.tools ?? [])],
+      [...bundleMcpTools, ...bundleLspTools],
       effectiveToolsAllow,
       {
         toolMeta: (tool) => getPluginToolMeta(tool),
@@ -1426,11 +1440,20 @@ export async function runEmbeddedAttempt(
       senderE164: params.senderE164,
       warn: (message) => log.warn(message),
     });
-    const normalizedBundledTools =
+    const providerNormalizableBundledTools =
       filteredBundledTools.length > 0
+        ? filterProviderNormalizableRuntimeTools({
+            tools: filteredBundledTools,
+            runId: params.runId,
+            sessionKey: params.sessionKey,
+            sessionId: params.sessionId,
+          })
+        : [];
+    const normalizedBundledTools =
+      providerNormalizableBundledTools.length > 0
         ? normalizeAgentRuntimeTools({
             runtimePlan: params.runtimePlan,
-            tools: filteredBundledTools,
+            tools: providerNormalizableBundledTools,
             provider: params.provider,
             config: params.config,
             workspaceDir: effectiveWorkspace,
@@ -1440,7 +1463,7 @@ export async function runEmbeddedAttempt(
             model: params.model,
             runtimeHandle: getProviderRuntimeHandle(),
           })
-        : filteredBundledTools;
+        : providerNormalizableBundledTools;
     const projectedUncompactedEffectiveTools = filterLocalModelLeanTools({
       tools: [...tools, ...normalizedBundledTools],
       config: params.config,
